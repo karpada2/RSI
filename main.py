@@ -297,8 +297,10 @@ def read_soil_moisture_raw() -> int:
         time.sleep(0.010)
     # https://docs.micropython.org/en/latest/esp32/quickref.html#adc-analog-to-digital-conversion
     adc = ADC(soil_moisture_config['adc_pin_id'], atten=ADC.ATTN_11DB)
-    adc.width(12)
-    raw_reading = adc.read()
+    raw_reading = 0
+    for i in range(1):
+        raw_reading += adc.read_u16()
+    raw_reading //= i+1
     if soil_moisture_config['power_pin_id'] >= 0:
         Pin(soil_moisture_config['power_pin_id'], Pin.IN)
     return raw_reading
@@ -308,8 +310,8 @@ def get_soil_moisture_milli(raw_reading: int = None) -> int:
         raw_reading = read_soil_moisture_raw()
     if raw_reading is None:
         return None
-    # raw range of [1..4094] is linarly mapped onto [1..999], 0->0, 4095->1000
-    milli_moist = int((4.094+raw_reading) // 4.099)
+    # raw range of [1..65534] is linarly mapped onto [1..999], 0->0, 65535->1000
+    milli_moist = int((65.3+raw_reading) // 65.6)
     return 1000-milli_moist if config['options']['soil_moisture_sensor']['high_is_dry'] else milli_moist
 
 #############

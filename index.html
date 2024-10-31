@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RSI - Real Simple Irrigation</title>
+    <title>RSI - Offline</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .collapsible-content {
@@ -22,7 +22,7 @@
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
         <div class="flex justify-between items-center mb-4">
-            <h1 class="text-3xl font-bold">RSI - Real Simple Irrigation</h1>
+            <h1  id="main-title" class="text-3xl font-bold">RSI - Real Simple Irrigation</h1>
             <div id="current-time" class="text-xl font-semibold"></div>
         </div>
         <div class="space-y-4">
@@ -81,11 +81,11 @@
                 const response = await fetch('/status');
                 status = await response.json();
 
-                // Update time
                 const date = new Date(status.local_timestamp * 1000);
                 document.getElementById('current-time').textContent = date.toISOString().slice(0, -5);
+                document.title = `RSI @${status.hostname} - Real Simple Irrigation`;
+                document.getElementById('main-title').textContent = document.title;
 
-                // Update soil moisture
                 const element = document.getElementById('status-content');
                 element.innerHTML = Object.entries(status).reduce((acc, entry) => {
                     return acc.concat(`<p>${entry[0]}: ${entry[1]}</p>`);

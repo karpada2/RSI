@@ -2,10 +2,15 @@
 Design philosophy:
 1. Easy to source generic components
 1. Cheap - cost could be as low as 10$ (including the valve)
-1. Easy to setup - no soldering required
+1. Easy to setup
+    * Few components
+    * No soldering required
 1. Scheduled watering based on soil moisture
 
-## Component cost
+## Diagram
+https://wokwi.com/projects/412802920651096065
+
+### Cost breakdown
 | Component | Spec | Cost |
 | --- | --- | --- |
 | Controller | ESP32-S2 | $2 |
@@ -63,13 +68,19 @@ Depends on the valve/pump used, conroller may be powered by a USB charger & cabl
 ## References:
 1. 
 
+### Pinout
+* [ESP8266 D1 Mini](https://www.sudo.is/docs/esphome/boards/esp8266d1mini/#pinout)
+* [ESP32-S2 Mini](https://www.sudo.is/docs/esphome/boards/esp32s2mini/ESP32_S2_mini_pinout.jpg)
+* [ESP32-S3](https://docs.espressif.com/projects/esp-idf/en/stable/esp32s3/_images/ESP32-S3_DevKitM-1_pinlayout.jpg) 
+
+
 ## Initial setup
 1. using Thonny, copy main.py, index.html, setup.html to the ESP32
 1. reset & enter wifi setup mode by pressing the button within 1 second, led will blink rapidly.
 1. connect to the ESP32's wifi `irrigation-esp32` and configure the wifi settings
 
 ## Updating the code
-```bash
+```shell
 URL=http://192.168.123.456
 for html in *.html; do time curl -X POST --data-binary @$html ${URL}/file/$html | jq; done
 curl -X POST --data-binary @main.py ${URL}/file/main.py\?reboot\=1

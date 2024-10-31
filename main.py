@@ -264,6 +264,7 @@ def apply_config(new_config: dict) -> None:
             "adc_pin_id": int(bo['soil_moisture_sensor'].get('adc_pin_id', 12)),
             "power_pin_id": int(bo['soil_moisture_sensor'].get('power_pin_id', 13)),
             "high_is_dry": bool(bo['soil_moisture_sensor'].get('high_is_dry', True)),
+            "sample_count": int(bo['soil_moisture_sensor'].get('sample_count', 3)),
         },
         "settings": {
             "enable_irrigation_schedule": bool(bo['settings'].get('enable_irrigation_schedule', True)),
@@ -298,7 +299,7 @@ def read_soil_moisture_raw() -> int:
     # https://docs.micropython.org/en/latest/esp32/quickref.html#adc-analog-to-digital-conversion
     adc = ADC(soil_moisture_config['adc_pin_id'], atten=ADC.ATTN_11DB)
     raw_reading = 0
-    for i in range(1):
+    for i in range(soil_moisture_config['sample_count']):
         raw_reading += adc.read_u16()
     raw_reading //= i+1
     if soil_moisture_config['power_pin_id'] >= 0:

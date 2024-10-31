@@ -14,7 +14,6 @@ from uos import rename, stat
 # Global variables
 micropython_to_timestamp: int = 3155673600 - 2208988800  # 1970-2000
 micropython_to_localtime: int = None
-soil_sensor: ADC = None
 wlan: network.WLAN = network.WLAN(network.STA_IF)
 config: dict = None
 valve_status: int = 0
@@ -181,8 +180,9 @@ async def schedule_irrigation():
                 # we are not inside the schedule
                 continue
 
-            if None != soil_sensor and config['options']['irrigation_factor']['reference_schedule_id'] == i and irrigation_factor_expiration <= local_timestamp + sec_till_end:
-                soil_moisture = read_soil_moisture_milli()
+            if (config['options']['irrigation_factor']['reference_schedule_id'] == i and
+                irrigation_factor_expiration <= local_timestamp + sec_till_end and
+                (soil_moisture := read_soil_moisture_milli()) is not None):
                 # it's the reference_schedule_id and irrigation_factor is about to expire, we might need to adjust the irrigation factor
                 if schedule_status & (1 << i):
                     # reference_schedule_id is active, check if we should stop
@@ -223,7 +223,6 @@ async def schedule_irrigation():
 def apply_config(new_config: dict) -> None:
     global config
     global micropython_to_localtime
-    global soil_sensor
     global heartbeat_pin_id
 
     normalized_config = {"zones": [], "schedules": [], "options": {}}
@@ -287,24 +286,23 @@ def apply_config(new_config: dict) -> None:
     config = normalized_config
 
     micropython_to_localtime = micropython_to_timestamp + round(config['options']['settings']['timezone_offset'] * 3600)
-
-    soil_moisture_pin_id = config['options']['soil_moisture_sensor']['adc_pin_id']
-    soil_sensor = ADC(soil_moisture_pin_id, atten=ADC.ATTN_11DB) if soil_moisture_pin_id >= 0 else None
-
     heartbeat_pin_id = config['options']['settings']['heartbeat_pin_id']
 
 def read_soil_moisture_milli() -> int:
-    if None  == soil_sensor:
+    soil_moisture_config = config['options']['soil_moisture_sensor']
+    if 0 > soil_moisture_config['adc_pin_id']:
         return None
-    c = config['options']['soil_moisture_sensor']
-    if c['power_pin_id'] >= 0:
-        Pin(c['power_pin_id'], Pin.OUT).value(1)
+    if soil_moisture_config['power_pin_id'] >= 0:
+        Pin(soil_moisture_config['power_pin_id'], Pin.OUT).value(1)
+        time.sleep(0.010)
     # https://docs.micropython.org/en/latest/esp32/quickref.html#adc-analog-to-digital-conversion
-    time.sleep(0.010)
-    milli_moist = int(soil_sensor.read() // 8.191)
-    if c['power_pin_id'] >= 0:
-        Pin(c['power_pin_id'], Pin.IN)
-    return 1000-milli_moist if c['high_is_dry'] else milli_moist
+    adc = ADC(soil_moisture_config['adc_pin_id'], atten=ADC.ATTN_11DB)
+    adc.width(12)
+    # 0-1000, only raw reading of 0->0 & 4095->1000 other values are linearly scaled
+    milli_moist = int((4+adc.read()) // 4.099)
+    if soil_moisture_config['power_pin_id'] >= 0:
+        Pin(soil_moisture_config['power_pin_id'], Pin.IN)
+    return 1000-milli_moist if soil_moisture_config['high_is_dry'] else milli_moist
 
 #############
 # HTTP server

@@ -182,7 +182,7 @@ async def schedule_irrigation():
 
             if (config['options']['irrigation_factor']['reference_schedule_id'] == i and
                 irrigation_factor_expiration <= local_timestamp + sec_till_end and
-                (soil_moisture := read_soil_moisture_milli()) is not None):
+                (soil_moisture := get_soil_moisture_milli()) is not None):
                 # it's the reference_schedule_id and irrigation_factor is about to expire, we might need to adjust the irrigation factor
                 if schedule_status & (1 << i):
                     # reference_schedule_id is active, check if we should stop
@@ -288,7 +288,7 @@ def apply_config(new_config: dict) -> None:
     micropython_to_localtime = micropython_to_timestamp + round(config['options']['settings']['timezone_offset'] * 3600)
     heartbeat_pin_id = config['options']['settings']['heartbeat_pin_id']
 
-def read_soil_moisture_milli() -> int:
+def read_soil_moisture_raw() -> int:
     soil_moisture_config = config['options']['soil_moisture_sensor']
     if 0 > soil_moisture_config['adc_pin_id']:
         return None
@@ -298,11 +298,19 @@ def read_soil_moisture_milli() -> int:
     # https://docs.micropython.org/en/latest/esp32/quickref.html#adc-analog-to-digital-conversion
     adc = ADC(soil_moisture_config['adc_pin_id'], atten=ADC.ATTN_11DB)
     adc.width(12)
-    # 0-1000, only raw reading of 0->0 & 4095->1000 other values are linearly scaled
-    milli_moist = int((4+adc.read()) // 4.099)
+    raw_reading = adc.read()
     if soil_moisture_config['power_pin_id'] >= 0:
         Pin(soil_moisture_config['power_pin_id'], Pin.IN)
-    return 1000-milli_moist if soil_moisture_config['high_is_dry'] else milli_moist
+    return raw_reading
+
+def get_soil_moisture_milli(raw_reading: int = None) -> int:
+    if raw_reading is None:
+        raw_reading = read_soil_moisture_raw()
+    if raw_reading is None:
+        return None
+    # raw range of [1..4094] is linarly mapped onto [1..999], 0->0, 4095->1000
+    milli_moist = int((4.094+raw_reading) // 4.099)
+    return 1000-milli_moist if config['options']['soil_moisture_sensor']['high_is_dry'] else milli_moist
 
 #############
 # HTTP server
@@ -405,14 +413,19 @@ async def handle_request(reader, writer):
             content_type = 'text/html'
         elif method == 'GET' and path == '/status':
             # tt = time.gmtime()
+            soil_moisture_raw = read_soil_moisture_raw()
+            soil_moisture_milli = get_soil_moisture_milli(soil_moisture_raw)
             response = ujson.dumps({
                 "local_timestamp": get_local_timestamp(),
-                "soil_moisture": read_soil_moisture_milli(),
+                "soil_moisture_milli": soil_moisture_milli,
+                "soil_moisture_raw": soil_moisture_raw,
                 "gc.mem_alloc": gc.mem_alloc(),
+                "gc.mem_free": gc.mem_free(),
                 "valve_status": f"{valve_status:08b}",
                 "schedule_status": f"{schedule_status:08b}",
                 "mcu_temperature": esp32.mcu_temperature(),
                 "irrigation_factor": irrigation_factor,
+                "hostname": config['options']['wifi']['hostname'],
             })
         elif wifi_setup_mode and method == 'GET' and path == '/setup':
                 print(f"Setup: query_params={query_params}")
@@ -451,7 +464,7 @@ async def send_metrics():
         try:
             # TODO: add micropython.mem_info()
             if 'thingsspeak_apikey' in config['options']['monitoring']:
-                requests.get(f"http://api.thingspeak.com/update?api_key={config['options']['monitoring']['thingsspeak_apikey']}&field1={read_soil_moisture_milli()}&field2={gc.mem_alloc()}&field3={valve_status}&field4={irrigation_factor}&field5={esp32.mcu_temperature()}", timeout=10).close()
+                requests.get(f"http://api.thingspeak.com/update?api_key={config['options']['monitoring']['thingsspeak_apikey']}&field1={get_soil_moisture_milli()}&field2={gc.mem_alloc()}&field3={valve_status}&field4={irrigation_factor}&field5={esp32.mcu_temperature()}", timeout=10).close()
         except Exception as e:
             print(f"Error sending metrics: {e}")
         finally:

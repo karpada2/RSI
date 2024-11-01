@@ -100,30 +100,31 @@ def control_watering(zone_id: int, start: bool) -> None:
     if pin_id < 0:
         print("NOP pin_id<0")
         return
-    pin_value = 1 if config['options']['settings']['pin_high_valve_open'] else 0
+    pin_value = 1 if zone['active_is_high'] else 0
     print(f"Zones[{zone_id}]='{zone['name']}' (off_pin={zone['off_pin']}, on_pin={zone['on_pin']}) will be set {'open' if start else 'close'} using pin_id({pin_id}).value({pin_value})")
     if zone['on_pin'] == zone['off_pin']:
+        # leave the pin in the state
         if start:
-            Pin(pin_id, Pin.OUT).value(pin_value)
+            Pin(pin_id, Pin.OUT, value=pin_value)
         else:
             Pin(pin_id, Pin.IN)
     else:
+        # pulse the pin
         Pin(pin_id, Pin.OUT).value(pin_value)
         time.sleep(0.060)
         Pin(pin_id, Pin.IN)
 
 async def apply_valves(new_status: int) -> None:
     global valve_status
-
     if new_status == valve_status:
         return
 
     print(f"@{time.time()} apply_valves({new_status:08b}), valve_status={valve_status:08b}")
-
     relay_pin_id = config['options']['settings']['relay_pin_id']
     if relay_pin_id >= 0:
-        Pin(relay_pin_id, Pin.OUT).value(1)
-        await asyncio.sleep(0.100) # wait for H-Bridges to power up
+        relay_value = 1 if config['options']['settings']['relay_active_is_high'] else 0
+        Pin(relay_pin_id, Pin.OUT, value=relay_value)
+        await asyncio.sleep(0.250) # wait for H-Bridges to power up
 
     for i in range(len(config['zones'])):
         if (valve_status^new_status)>>i & 1:
@@ -209,7 +210,9 @@ async def schedule_irrigation():
 
         # print(f"@{time.time()} valve_desired={valve_desired:08b}")
         if valve_desired > 0:
-            valve_desired |= 1
+            for i, zone in enumerate(config["zones"]):
+                if zone['master']:
+                    valve_desired |= (1 << i)
 
         await apply_valves(valve_desired)
         schedule_status = new_schedule_status
@@ -226,11 +229,13 @@ def apply_config(new_config: dict) -> None:
     global heartbeat_pin_id
 
     normalized_config = {"zones": [], "schedules": [], "options": {}}
-    for zone_data in new_config.get('zones', []):
+    for i, zone_data in enumerate(new_config.get('zones', [])):
         normalized_config['zones'].append({
-            "name": str(zone_data['name']),
-            "on_pin": int(zone_data['on_pin']),
-            "off_pin": int(zone_data['off_pin']),
+            "name": str(zone_data.get('name', f'zone-{i}')),
+            "master": bool(zone_data.get('master', False)),
+            "active_is_high": bool(zone_data.get('active_is_high', True)),
+            "on_pin": int(zone_data.get('on_pin', -1)),
+            "off_pin": int(zone_data.get('off_pin', -1)),
         })
     for schedule_data in new_config.get('schedules', []):
         normalized_config['schedules'].append({
@@ -271,7 +276,7 @@ def apply_config(new_config: dict) -> None:
             "timezone_offset": float(bo['settings'].get('timezone_offset', -7)),
             "relay_pin_id": int(bo['settings'].get('relay_pin_id', -1)),
             "heartbeat_pin_id": int(bo['settings'].get('heartbeat_pin_id', heartbeat_pin_id)),
-            "pin_high_valve_open": bool(bo['settings'].get('pin_high_valve_open', True)),
+            "relay_active_is_high": bool(bo['settings'].get('relay_active_is_high', False)),
         },
     }
 
@@ -515,7 +520,8 @@ async def main():
         await wait_for_wifi_setup(bootstrap.button_pin_id, 1)
 
     apply_config(load_from_json('config.json') or {})
-    # force all valves off
+
+    # set valve_status = 0b1111...1 so that the first apply_valves will turn off all valves
     valve_status = (1<<len(config['zones']))-1
     await apply_valves(0)
 
